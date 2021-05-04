@@ -1,27 +1,21 @@
 import pandas as pd
-from matplotlib import pyplot as plt
 from sklearn.model_selection import train_test_split
+from sklearn.metrics import classification_report
+import numpy as np
 
 from torch.utils.data import Dataset, DataLoader
 from torch import nn
-import numpy as np
-from transformers import BertTokenizer, BertModel
-from torch import device
+from transformers import BertTokenizer, BertModel, get_linear_schedule_with_warmup, AdamW
 import torch
-from tqdm.notebook import tqdm
+from tqdm import tqdm
 from collections import defaultdict
 
-from sklearn.metrics import classification_report
 
-
-from transformers import get_linear_schedule_with_warmup, AdamW
-
-
-BATCH_SIZE = 64
+BATCH_SIZE = 256
 PRE_TRAINED_MODEL_NAME = 'bert-base-cased'
 EPOCHS = 10
 RANDOM_SEED = 12345
-n_samples = 5*BATCH_SIZE
+n_samples = None # 10*BATCH_SIZE
 
 
 def get_device():
@@ -30,7 +24,7 @@ def get_device():
     :return:
     """
     if torch.cuda.is_available():
-        device = 'gpu:0'
+        device = 'cuda:1'
     else:
         device = 'cpu'
     return device
@@ -138,7 +132,7 @@ def train_epoch(model, data_loader, loss_fn, optimizer, device, scheduler):
         optimizer.zero_grad()
 
         _, predictions = torch.max(outputs, dim=1)
-        epoch_predictions.extend(predictions.numpy().tolist())
+        epoch_predictions.extend(predictions.cpu().numpy().tolist())
         epoch_targets.extend(d['target'].numpy().tolist())
 
     epoch_loss = np.mean(losses)
@@ -175,7 +169,7 @@ def eval_model(model, data_loader, loss_fn, device):
             loss = loss_fn(outputs, targets)
             losses.append(loss.item())
             _, predictions = torch.max(outputs, dim=1)
-            epoch_predictions.extend(predictions.numpy().tolist())
+            epoch_predictions.extend(predictions.cpu().numpy().tolist())
             epoch_targets.extend(d['target'].numpy().tolist())
 
     epoch_loss = np.mean(losses)
@@ -193,10 +187,15 @@ def get_data_loader(df, tokenizer, batch_size=16, num_workers=2):
 def main():
 
     device=get_device()
+    print(device)
 
     df = load_data()
-    df_train, df_test = train_test_split(df.iloc[:n_samples], test_size=2*BATCH_SIZE, random_state=RANDOM_SEED)
-    df_val, df_test = train_test_split(df_test, test_size=BATCH_SIZE, random_state=RANDOM_SEED)
+    if n_samples is None:
+        t = df
+    else:
+        t = df.iloc[n_samples]
+    df_train, df_test = train_test_split(t, test_size=0.1, random_state=RANDOM_SEED)
+    df_val, df_test = train_test_split(df_test, test_size=0.5, random_state=RANDOM_SEED)
     print('Train set size is {:d}'.format(df_train.shape[0]))
     print('Validation set size is {:d}'.format(df_test.shape[0]))
 
