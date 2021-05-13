@@ -5,7 +5,7 @@ import numpy as np
 
 from torch.utils.data import Dataset, DataLoader
 from torch import nn
-from transformers import BertTokenizer, BertModel, get_linear_schedule_with_warmup, AdamW
+from transformers import BertTokenizer, BertModel, get_linear_schedule_with_warmup, AdamW, get_cosine_schedule_with_warmup
 import torch
 from tqdm import tqdm
 from collections import defaultdict
@@ -13,7 +13,7 @@ from collections import defaultdict
 
 BATCH_SIZE = 256
 PRE_TRAINED_MODEL_NAME = 'bert-base-cased'
-EPOCHS = 10
+EPOCHS = 30
 RANDOM_SEED = 12345
 n_samples = None # 10*BATCH_SIZE
 
@@ -205,11 +205,11 @@ def main():
 
     model = ReviewClassifier(n_classes=4)
     model = model.to(device)
-    optimizer = AdamW(model.parameters(), lr=2e-5)
+    optimizer = AdamW(model.parameters(), lr=1e-4)
 
-    total_steps = 500 # len(train_data_loader) * EPOCHS
+    total_steps = len(train_data_loader) * EPOCHS
 
-    scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=0, num_training_steps=total_steps)
+    scheduler = get_cosine_schedule_with_warmup(optimizer, num_warmup_steps=total_steps // 50, num_training_steps=total_steps)
     loss_fn = nn.CrossEntropyLoss().to(device)
 
     history = defaultdict(list)
@@ -217,6 +217,7 @@ def main():
     for epoch in range(EPOCHS):
         print(f'Epoch {epoch + 1}/{EPOCHS}')
         print('-' * 10)
+        print('Learning Rate is ', scheduler.get_last_lr())
 
         train_report, train_loss = train_epoch(model, train_data_loader, loss_fn, optimizer, device, scheduler)
         val_report, val_loss = eval_model(model, val_data_loader, loss_fn, device)
