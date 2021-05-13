@@ -9,13 +9,18 @@ from transformers import BertTokenizer, BertModel, get_linear_schedule_with_warm
 import torch
 from tqdm import tqdm
 from collections import defaultdict
+import logging
+
+from utils import read_yml, revert_listdict, set_seeds
 
 
-BATCH_SIZE = 256
+_logger = logging.getLogger(__name__)
+
+BATCH_SIZE = 16
 PRE_TRAINED_MODEL_NAME = 'bert-base-cased'
 EPOCHS = 30
 RANDOM_SEED = 12345
-n_samples = None # 10*BATCH_SIZE
+n_samples = 5*BATCH_SIZE
 
 
 def get_device():
@@ -39,9 +44,13 @@ def load_data() -> pd.DataFrame:
     try:
         df = pd.read_excel(data_pth, index_col='id', engine='openpyxl')
     except Exception as err:
-        print('Can not read the data. Error message is %s', repr(err))
-    print(df.shape)
-    mapper = {'RL': 0, 'Rl': 0, 'L-': 1, 'l-': 1, 'YL': 2, 'yl': 2, 'Yl': 2, 'L+': 3}
+        _logger.error('Can not read the data. Error message is %s', repr(err))
+        return None
+    mapper = read_yml('mapper.yml').get('mapper')
+    if mapper is None:
+        _logger.error('Empty mapper was given')
+        return None
+    mapper = revert_listdict(mapper)
     df['label'] = df['mark'].map(mapper)
     return df
 
@@ -58,7 +67,7 @@ class ReviewDataset(Dataset):
 
     def _process_reviews(self):
         """
-
+        Preprocess reviews and keep results as a class attribute
         """
         params = {'add_special_tokens': True, 'max_length': self._max_len,
                   'return_token_type_ids': False, 'pad_to_max_length': True,
@@ -70,9 +79,12 @@ class ReviewDataset(Dataset):
         return self._review.shape[0]
 
     def __getitem__(self, item):
-
+        """
+        Return i-th item of the dataset
+        :param item:
+        :return:
+        """
         tokens = self._tokens.iloc[item]
-
         result = {'text': self._review.iloc[item],
                   'tokens': tokens['input_ids'].flatten(),
                   'mask': tokens['attention_mask'].flatten(),
@@ -185,19 +197,25 @@ def get_data_loader(df, tokenizer, batch_size=16, num_workers=2):
 
 
 def main():
+    """
 
-    device=get_device()
-    print(device)
+    :return:
+    """
+    set_seeds(1)
+
+    device = get_device()
+    _logger.info('Device is %s', str(device))
 
     df = load_data()
     if n_samples is None:
         t = df
     else:
         t = df.iloc[n_samples]
+
     df_train, df_test = train_test_split(t, test_size=0.1, random_state=RANDOM_SEED)
     df_val, df_test = train_test_split(df_test, test_size=0.5, random_state=RANDOM_SEED)
-    print('Train set size is {:d}'.format(df_train.shape[0]))
-    print('Validation set size is {:d}'.format(df_test.shape[0]))
+    _logger.info('Train set size is %d', df_train.shape[0])
+    _logger.info('Validation set size is %d', df_test.shape[0])
 
     tokenizer = BertTokenizer.from_pretrained(PRE_TRAINED_MODEL_NAME)
     train_data_loader = get_data_loader(df_train, tokenizer, batch_size=BATCH_SIZE, num_workers=4)
